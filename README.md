@@ -11,6 +11,7 @@ Does some live audio processing of guitar input. Features:
 - [ ] Compressor
 - [ ] Distortion
 - [ ] Looping
+- [ ] Metronome
 
 # License
 MIT License
