@@ -2,10 +2,57 @@ use jack;
 use std::io;
 
 fn process_block(input: &[f32], output: &mut [f32]) {
-    output.copy_from_slice(input);
+    let compress = true;
+    if compress {
+        let scale = compressor(input);
+        input
+            .iter()
+            .zip(output.iter_mut())
+            .for_each(|(x, y)| *y = x * scale);
+    } else {
+        output.copy_from_slice(input);
+    }
 }
 
-// Much of the code here was adapted from the playback_capture example from rust jack crate
+// compressor - basically a rust rewrite of Bart's compressor
+// might do a better algorithm that has a attack and release adjustment
+// because when the compressor shuts off below the threshold it
+// sounds pretty bad (pop/click noise). Also, I am using my Jack's buffer
+// frame size (usually 512 samples) which is pretty short.
+// I could save older samples with a ring buffer if I wanted a larger period
+fn compressor(buffer: &[f32]) -> f32 {
+    // for calculating peak amplitude.
+    let threshold = -50.0;
+    let ratio = 4.0;
+
+    let peak = peak(buffer);
+
+    if peak >= threshold {
+        10.0_f32.powf(
+            ((peak - threshold) * (1.0 / ratio - 1.0) + threshold * (1.0 / ratio - 1.0)) / 20.0,
+        )
+    } else {
+        1.0
+    }
+}
+
+fn peak(buffer: &[f32]) -> f32 {
+    let (max, min) = buffer
+        .iter()
+        .fold((buffer[0], buffer[0]), |(max, min), &x| {
+            if x > max {
+                (x, min)
+            } else if x < min {
+                (max, x)
+            } else {
+                (max, min)
+            }
+        });
+
+    20.0 * (max - min).log10()
+}
+
+// Most of the code here was adapted from the playback_capture example from rust jack crate
 fn main() {
     let (client, _status) =
         jack::Client::new("rust_jack_simple", jack::ClientOptions::NO_START_SERVER).unwrap();
@@ -25,8 +72,11 @@ fn main() {
     };
 
     let process = jack::ClosureProcessHandler::new(process_callback);
+
+    // Activate the client, which starts the processing.
     let active_client = client.activate_async(Notifications, process).unwrap();
 
+    // Wait for user input to quit
     println!("Press enter/return to quit...");
     let mut user_input = String::new();
     io::stdin().read_line(&mut user_input).ok();
