@@ -8,10 +8,15 @@ cargo run --release
 # Purpose
 Does some live audio processing of guitar input. Features:
 
-- [ ] Compressor
+- [x] Compressor
 - [ ] Distortion
 - [ ] Looping
 - [ ] Metronome
+
+# TODO
+
+- [ ] Maybe improve compressor algorithm?
+- [ ] Create TUI
 
 # License
 MIT License
