@@ -1,6 +1,8 @@
 use jack;
 use std::io;
 
+const SIZE: usize = 512;
+
 fn process_block(input: &[f32], output: &mut [f32]) {
     let compress = true;
     if compress {
@@ -11,6 +13,12 @@ fn process_block(input: &[f32], output: &mut [f32]) {
             .for_each(|(x, y)| *y = x * scale);
     } else {
         output.copy_from_slice(input);
+    }
+
+    let wet = distortion(output);
+    let mix = 0.10;
+    for (x, wet) in output.iter_mut().zip(wet.iter()) {
+        *x = *x * (1.0 - mix) + wet * mix;
     }
 }
 
@@ -34,6 +42,33 @@ fn compressor(buffer: &[f32]) -> f32 {
     } else {
         1.0
     }
+}
+
+fn distortion(buffer: &[f32]) -> [f32; SIZE] {
+    // hopefully this gets optimized out?
+    let table: Vec<f32> = (0..1000)
+        .map(|x| (x as f32 * 3.0 / 1000.0).atan() * 0.8)
+        .collect();
+
+    let waveshape = |x: f32| {
+        let x = (x * 1000.0).trunc() as i32;
+        if x >= 0 && x < 1000 {
+            table[x as usize]
+        } else if x < 0 && x > -1000 {
+            -1.0 * table[(x * -1) as usize]
+        } else if x > 1000 {
+            table[999]
+        } else {
+            -1.0 * table[999]
+        }
+    };
+
+    let mut output = [0.0; SIZE];
+    for (x, y) in buffer.iter().zip(output.iter_mut()) {
+        *y = waveshape(*x);
+    }
+
+    output
 }
 
 fn peak(buffer: &[f32]) -> f32 {
