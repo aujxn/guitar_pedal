@@ -1,94 +1,168 @@
+use hound::WavReader;
 use jack;
 use std::io;
+use structopt::StructOpt;
 
-const SIZE: usize = 512;
+const BUFFER_SIZE: usize = 512;
+const SAMPLE_RATE: usize = 48000;
+const SAMPLES_PER_MINUTE: usize = SAMPLE_RATE * 60;
 
-fn process_block(input: &[f32], output: &mut [f32]) {
-    let compress = true;
-    if compress {
-        let scale = compressor(input);
-        input
-            .iter()
-            .zip(output.iter_mut())
-            .for_each(|(x, y)| *y = x * scale);
-    } else {
-        output.copy_from_slice(input);
-    }
-
-    let wet = distortion(output);
-    let mix = 0.10;
-    for (x, wet) in output.iter_mut().zip(wet.iter()) {
-        *x = *x * (1.0 - mix) + wet * mix;
-    }
+#[derive(Debug, StructOpt)]
+struct Opt {
+    #[structopt(short, long, default_value = "80")]
+    bpm: usize,
 }
 
-// compressor - basically a rust rewrite of Bart's compressor
-// might do a better algorithm that has a attack and release adjustment
-// because when the compressor shuts off below the threshold it
-// sounds pretty bad (pop/click noise). Also, I am using my Jack's buffer
-// frame size (usually 512 samples) which is pretty short.
-// I could save older samples with a ring buffer if I wanted a larger period
-fn compressor(buffer: &[f32]) -> f32 {
-    // for calculating peak amplitude.
-    let threshold = -50.0;
-    let ratio = 4.0;
-
-    let peak = peak(buffer);
-
-    if peak >= threshold {
-        10.0_f32.powf(
-            ((peak - threshold) * (1.0 / ratio - 1.0) + threshold * (1.0 / ratio - 1.0)) / 20.0,
-        )
-    } else {
-        1.0
-    }
+struct PlaybackManager {
+    loops: Vec<Vec<f32>>,
+    loop_index: usize,
+    samples_per_measure: usize, // only supports 4/4 for now
 }
 
-fn distortion(buffer: &[f32]) -> [f32; SIZE] {
-    // hopefully this gets optimized out?
-    let table: Vec<f32> = (0..1000)
-        .map(|x| (x as f32 * 3.0 / 1000.0).atan() * 0.8)
-        .collect();
+impl PlaybackManager {
+    fn new(bpm: usize) -> Self {
+        let mut wav = WavReader::open("big_tick.wav").unwrap();
+        let mut big_tick: Vec<f32> = wav.samples().map(|x: Result<f32, _>| x.unwrap()).collect();
+        wav = WavReader::open("little_tick.wav").unwrap();
+        let little_tick: Vec<f32> = wav.samples().map(|x: Result<f32, _>| x.unwrap()).collect();
 
-    let waveshape = |x: f32| {
-        let x = (x * 1000.0).trunc() as i32;
-        if x >= 0 && x < 1000 {
-            table[x as usize]
-        } else if x < 0 && x > -1000 {
-            -1.0 * table[(x * -1) as usize]
-        } else if x > 1000 {
-            table[999]
-        } else {
-            -1.0 * table[999]
-        }
-    };
+        let samples_per_beat = SAMPLES_PER_MINUTE / bpm;
+        let samples_per_measure = samples_per_beat * 4;
+        let silence = samples_per_beat - little_tick.len();
 
-    let mut output = [0.0; SIZE];
-    for (x, y) in buffer.iter().zip(output.iter_mut()) {
-        *y = waveshape(*x);
-    }
+        let mut metronome = vec![];
+        metronome.append(&mut big_tick);
+        metronome.append(
+            &mut (0..samples_per_beat)
+                .skip(metronome.len())
+                .map(|_| 0.0)
+                .collect(),
+        );
 
-    output
-}
-
-fn peak(buffer: &[f32]) -> f32 {
-    let (max, min) = buffer
-        .iter()
-        .fold((buffer[0], buffer[0]), |(max, min), &x| {
-            if x > max {
-                (x, min)
-            } else if x < min {
-                (max, x)
-            } else {
-                (max, min)
+        for _ in 0..3 {
+            for &sample in little_tick.iter() {
+                metronome.push(sample);
             }
-        });
+            // creating a loop with mostly 0's is really bad but is
+            // simplest solution for now
+            for _ in 0..silence {
+                metronome.push(0.0);
+            }
+        }
+        assert_eq!(metronome.len(), samples_per_measure);
 
-    20.0 * (max - min).log10()
+        let loops = vec![metronome];
+        let loop_index = 0;
+        Self {
+            loops,
+            loop_index,
+            samples_per_measure,
+        }
+    }
+
+    fn process_block(&mut self, input: &[f32], output: &mut [f32]) {
+        let compress = true;
+        if compress {
+            let scale = Self::compressor(input);
+            input
+                .iter()
+                .zip(output.iter_mut())
+                .for_each(|(x, y)| *y = x * scale);
+        } else {
+            output.copy_from_slice(input);
+        }
+
+        let wet = Self::distortion(output);
+        let mix = 0.10;
+        for (x, wet) in output.iter_mut().zip(wet.iter()) {
+            *x = *x * (1.0 - mix) + wet * mix;
+        }
+
+        self.play_loops(output);
+    }
+
+    fn play_loops(&mut self, output: &mut [f32]) {
+        for i in 0..BUFFER_SIZE {
+            output[i] += self.loops.iter().fold(0.0, |acc, x| {
+                acc + x[(i + self.loop_index) % self.samples_per_measure]
+            });
+        }
+
+        self.loop_index += BUFFER_SIZE;
+        self.loop_index %= self.samples_per_measure;
+    }
+
+    // compressor - basically a rust rewrite of Bart's compressor
+    // might do a better algorithm that has a attack and release adjustment
+    // because when the compressor shuts off below the threshold it
+    // sounds pretty bad (pop/click noise). Also, I am using my Jack's buffer
+    // frame size (usually 512 samples) which is pretty short.
+    // I could save older samples with a ring buffer if I wanted a larger period
+    fn compressor(buffer: &[f32]) -> f32 {
+        // for calculating peak amplitude.
+        let threshold = -50.0;
+        let ratio = 4.0;
+
+        let peak = Self::peak(buffer);
+
+        if peak >= threshold {
+            10.0_f32.powf(
+                ((peak - threshold) * (1.0 / ratio - 1.0) + threshold * (1.0 / ratio - 1.0)) / 20.0,
+            )
+        } else {
+            1.0
+        }
+    }
+
+    fn distortion(buffer: &[f32]) -> [f32; BUFFER_SIZE] {
+        // hopefully this gets optimized out?
+        let table: Vec<f32> = (0..1000)
+            .map(|x| (x as f32 * 3.0 / 1000.0).atan() * 0.8)
+            .collect();
+
+        let waveshape = |x: f32| {
+            let x = (x * 1000.0).trunc() as i32;
+            if x >= 0 && x < 1000 {
+                table[x as usize]
+            } else if x < 0 && x > -1000 {
+                -1.0 * table[(x * -1) as usize]
+            } else if x > 1000 {
+                table[999]
+            } else {
+                -1.0 * table[999]
+            }
+        };
+
+        let mut output = [0.0; BUFFER_SIZE];
+        for (x, y) in buffer.iter().zip(output.iter_mut()) {
+            *y = waveshape(*x);
+        }
+
+        output
+    }
+
+    fn peak(buffer: &[f32]) -> f32 {
+        let (max, min) = buffer
+            .iter()
+            .fold((buffer[0], buffer[0]), |(max, min), &x| {
+                if x > max {
+                    (x, min)
+                } else if x < min {
+                    (max, x)
+                } else {
+                    (max, min)
+                }
+            });
+
+        20.0 * (max - min).log10()
+    }
 }
 
 // Most of the code here was adapted from the playback_capture example from rust jack crate
 fn main() {
+    let opt = Opt::from_args();
+    let mut playback_manager = PlaybackManager::new(opt.bpm);
+
     let (client, _status) =
         jack::Client::new("rust_jack_simple", jack::ClientOptions::NO_START_SERVER).unwrap();
 
@@ -102,7 +176,7 @@ fn main() {
     let process_callback = move |_: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
         let output = out_b.as_mut_slice(ps);
         let input = in_b.as_slice(ps);
-        process_block(input, output);
+        playback_manager.process_block(input, output);
         jack::Control::Continue
     };
 
