@@ -47,6 +47,7 @@ version = "0.1.0"
 dependencies = [
  "hound",
  "jack",
+ "ringbuf",
  "structopt",
 ]
 
@@ -173,6 +174,12 @@ checksum = "54a21852a652ad6f610c9510194f398ff6f8692e334fd1145fed931f7fbe44ea"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "ringbuf"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c2b29d87cfbdce39849012bb5020fff88b8f01f4f5b55846a0b6ef360774eae"
 
 [[package]]
 name = "strsim"
