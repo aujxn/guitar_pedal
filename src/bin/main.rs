@@ -31,7 +31,10 @@ enum LoopStatus {
 impl LoopStatus {
     fn increment(&mut self, length: usize) {
         match self {
-            LoopStatus::On(x) => *x = (*x + 1) % length,
+            LoopStatus::On(x) => {
+                *x += 1;
+                *x %= length;
+            }
             _ => panic!("tried to increment inactive loop"),
         }
     }
@@ -80,7 +83,7 @@ impl Interface {
                 .midi_rx
                 .recv()
                 .expect("midi_event reciever channel error");
-            if midi_event.data[0] == 144 && midi_event.data[1] < 60 {
+            if midi_event.data[0] == 144 && midi_event.data[1] < 36 + NUM_LOOPS as u8 {
                 println!("{:?}", midi_event);
                 let _ = self
                     .loop_message_sender
@@ -190,9 +193,9 @@ impl LoopManager {
             .expect("no ending recording found in finish recording")
             .0;
 
-        //self.lengths[index] += 1;
+        self.lengths[index] += 1;
         self.status[index] = LoopStatus::On(0);
-        self.status[index].increment(self.lengths[index]);
+        //self.status[index].increment(self.lengths[index]);
         self.any_recording = false;
 
         loop {
@@ -212,21 +215,23 @@ impl LoopManager {
     }
 
     fn update_recording_status(&mut self) {
-        self.status = self
-            .status
-            .iter()
-            .map(|status| match status {
-                LoopStatus::RecordEnd => panic!("recording should be finished by other func"),
-                LoopStatus::RecordStart => LoopStatus::Recording,
-                _ => *status,
-            })
-            .collect();
+        for (i, status) in self.status.iter_mut().enumerate() {
+            if *status == LoopStatus::RecordEnd {
+                panic!("recording should be finished by other func");
+            }
 
-        for (i, status) in self.status.iter().enumerate() {
+            if *status == LoopStatus::RecordStart {
+                *status = LoopStatus::Recording;
+                self.any_recording = true;
+                self.recording_at_index = i;
+                return;
+            }
+
             if *status == LoopStatus::Recording {
                 self.lengths[i] += 1;
                 self.any_recording = true;
                 self.recording_at_index = i;
+                return;
             }
         }
     }
