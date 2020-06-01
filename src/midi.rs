@@ -1,8 +1,4 @@
-//! Creates a jack midi input and output ports. The application prints
-//! out all values sent to it through the input port. It also sends a
-//! Note On and Off event, once every cycle, on the output port.
 use std::convert::From;
-use std::io;
 use std::sync::mpsc::sync_channel;
 
 const MAX_MIDI: usize = 3;
@@ -41,11 +37,9 @@ impl std::fmt::Debug for MidiEvent {
 }
 
 pub fn listen_for_midi() -> std::sync::mpsc::Receiver<MidiEvent> {
-    // open client
     let (client, _status) =
-        jack::Client::new("rust_jack_show_midi", jack::ClientOptions::NO_START_SERVER).unwrap();
+        jack::Client::new("midi_controller", jack::ClientOptions::NO_START_SERVER).unwrap();
 
-    //create a sync channel to send back copies of midi messages we get
     let (sender, receiver) = sync_channel(64);
 
     std::thread::spawn(move || {
@@ -55,14 +49,13 @@ pub fn listen_for_midi() -> std::sync::mpsc::Receiver<MidiEvent> {
 
         let cback = move |_: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
             let iter = midi_controller.iter(ps);
-            for e in iter {
-                let c: MidiEvent = e.into();
-                let _ = sender.try_send(c);
+            for event in iter {
+                let message: MidiEvent = event.into();
+                let _ = sender.try_send(message);
             }
             jack::Control::Continue
         };
 
-        // activate
         let _active_client = client
             .activate_async((), jack::ClosureProcessHandler::new(cback))
             .unwrap();
@@ -71,17 +64,6 @@ pub fn listen_for_midi() -> std::sync::mpsc::Receiver<MidiEvent> {
             std::thread::park();
         }
     });
-
-    /*
-    //spawn a non-real-time thread that prints out the midi messages we get
-    std::thread::spawn(move || {
-        while let Ok(m) = receiver.recv() {
-            if m.data[0] != 248u8 && m.data[0] != 254u8 {
-                println!("{:?}", m);
-            }
-        }
-    });
-    */
 
     receiver
 }
