@@ -1,5 +1,13 @@
 ## Austen Nelson --- guitar_pedal
 
+# Purpose
+Does some live audio processing of guitar input. Features:
+
+- [x] Compressor
+- [x] Distortion
+- [x] Looping
+- [x] Metronome
+
 # Usage
 ```
 cargo run --release [--bpm]
@@ -27,22 +35,40 @@ To toggle compressor: midi note 96 (C7)
 
 Number of loops: 24, midi notes 36 (C2) to 59 (B3)
 
-# Purpose
-Does some live audio processing of guitar input. Features:
-
-- [x] Compressor
-- [x] Distortion
-- [x] Looping
-- [x] Metronome
-
 # Dependencies
 JACK Audio Connection Kit
 
 # TODO
 
 - [ ] Maybe improve compressor algorithm?
+- [ ] Better distortion algorithm?
 - [ ] Create TUI
 - [ ] Make metronome use different output port?
+
+# Tests
+There aren't any formal tests but running the application and using it seems to run
+with the current configuration. When I broke things it crashes fairly quickly as
+this application is fairly simple. I am not sure how I would simulate usage to write
+automated tests for this application.
+
+# Report
+I originally planned to do Wah as well but realized I need a pedal with some sort of
+modulation and creating that hardware wasn't reasonable right now. Making the looping
+mechanism turned out to be much more difficult than I expected and the solution I came
+up with doesn't seem incredibly robust. I learned a lot about audio and JACK, though,
+and am excited to do more audio related projects.
+
+Overall, I am satisfied that it works as well as it does. Working with live signals is
+different from any other development I have experienced. If I were to do it again I am
+not sure what I would change structurally, but I am sure it could be much better.
+
+I am very unsatisfied with the distortion effect I came up with, it sounds like garbage.
+I tried a few different approaches and they were all terrible with weird aliasing. I read
+a few papers about modeling effects of analog circuits but they were all beyond my
+comprehension. I could try to minimize the aliasing with oversampling techniques but this
+wont improve the otherwise low quality of the effect and might not even be reasonable in
+a live setting. The rest of the code has some TODO comments where I had thoughts of making
+changes or improvements but they are quite specific.
 
 # License
 MIT License
