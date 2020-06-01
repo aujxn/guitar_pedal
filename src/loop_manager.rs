@@ -240,7 +240,7 @@ impl LoopManager {
     /// loops are pending start.
     fn update_recording_status(&mut self) {
         // If recording update the length.
-        if self.any_recording == true {
+        if self.any_recording {
             self.lengths[self.recording_at_index] += 1;
         } else {
             for (i, status) in self.status.iter_mut().enumerate() {

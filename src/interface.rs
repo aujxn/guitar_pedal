@@ -58,14 +58,28 @@ impl Interface {
                 .recv()
                 .expect("midi_event reciever channel error");
 
-            // 144 in the first data byte is note down press. My keyboard goes down to
-            // C2 which is 36 in the second data byte. So make sure the key pressed
-            // is in the range of how many loop we have and send a toggle message.
-            if midi_event.data[0] == 144 && midi_event.data[1] < 36 + NUM_LOOPS as u8 {
+            // (144) in the first data byte is note down press.
+            if midi_event.data[0] == MIDI_NOTE_DOWN {
                 println!("{:?}", midi_event);
-                self.loop_message_sender
-                    .send(LoopMessage::ToggleLoop(midi_event.data[1] as usize - 36))
-                    .unwrap();
+                // My keyboard goes down to C2 which is 36 in the second data byte. So make sure
+                // the key pressed is in the range of how many loop we have and send a toggle message.
+                if midi_event.data[1] < LOOP_BASE_KEY + NUM_LOOPS as u8
+                    && midi_event.data[1] >= LOOP_BASE_KEY
+                {
+                    self.loop_message_sender
+                        .send(LoopMessage::ToggleLoop(
+                            (midi_event.data[1] - LOOP_BASE_KEY) as usize,
+                        ))
+                        .unwrap();
+                } else if midi_event.data[1] == DISTORTION_KEY {
+                    self.effects_message_sender
+                        .send(EffectMessage::ToggleDistortion)
+                        .unwrap();
+                } else if midi_event.data[1] == COMPRESSION_KEY {
+                    self.effects_message_sender
+                        .send(EffectMessage::ToggleCompression)
+                        .unwrap();
+                }
             // [176, 64, <=63] is the down press of the sustain pedal. This is
             // ergonomically nicer for stopping recording than pressing a key
             // and because a recording should be happening already the

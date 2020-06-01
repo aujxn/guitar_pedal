@@ -14,11 +14,20 @@ pub mod midi;
 pub mod notification_handler;
 pub mod playback_manager;
 
+/// Some global configuation constants
 pub mod constants {
+    /// The size of the JACK buffer frame
     pub const BUFFER_SIZE: usize = 512;
     pub const SAMPLE_RATE: usize = 48000;
     pub const SAMPLES_PER_MINUTE: usize = SAMPLE_RATE * 60;
+    /// How many loop registers we want
     pub const NUM_LOOPS: usize = 24;
+    /// What key will be loop ID of 0 (metronome)
+    pub const LOOP_BASE_KEY: u8 = 36; //C2
+    /// Which midi keys for distortion and compression
+    pub const DISTORTION_KEY: u8 = 95; //B6
+    pub const COMPRESSION_KEY: u8 = 96; //C7
+    pub const MIDI_NOTE_DOWN: u8 = 144;
 }
 
 /// Used to stream the input from the PlaybackManager to the LoopManager.

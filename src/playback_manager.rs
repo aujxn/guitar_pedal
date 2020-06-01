@@ -55,6 +55,7 @@ impl PlaybackManager {
     /// the LoopManager, read's mixed loop audio from LoopManager's RingBuffer
     /// and mixes it with the incoming signal and writes that to the output buffer.
     pub fn process_block(&mut self, input: &[f32], output: &mut [f32]) {
+        self.check_messages();
         if self.compress {
             // Calculate the compression scale
             let scale = Self::compressor(input);
@@ -83,6 +84,30 @@ impl PlaybackManager {
         self.send_stream(output);
         // Mix loop audio into output buffer
         self.play_loops(output);
+    }
+
+    /// Checks if the Interface is asking to toggle any effects.
+    fn check_messages(&mut self) {
+        if let Ok(message) = self.effects_message_receiver.lock().unwrap().try_recv() {
+            match message {
+                EffectMessage::ToggleDistortion => {
+                    self.distort = !self.distort;
+                    if self.distort {
+                        println!("Distortion ON");
+                    } else {
+                        println!("Distortion OFF");
+                    }
+                }
+                EffectMessage::ToggleCompression => {
+                    self.compress = !self.compress;
+                    if self.compress {
+                        println!("Compressor ON");
+                    } else {
+                        println!("Compressor OFF");
+                    }
+                }
+            }
+        }
     }
 
     /// Sends processed audio samples to LoopManager along with some clock information.
@@ -125,8 +150,8 @@ impl PlaybackManager {
     /// I could save older samples with a RingBuffer if I wanted a larger period.
     fn compressor(buffer: &[f32]) -> f32 {
         // for calculating peak amplitude.
-        let threshold = -50.0;
-        // compression ratio. TODO: allow interface messages to adjust this.
+        let threshold = -30.0;
+        // compression ratio. TODO: allow interface messages to adjust this and threshold
         let ratio = 4.0;
         let peak = Self::peak(buffer);
         if peak >= threshold {
