@@ -1,4 +1,4 @@
-// Notification Handler code taken from playback_capture example in rust jack crate
+/// Notification Handler code taken from playback_capture example in rust jack crate
 pub struct Notifications;
 
 impl jack::NotificationHandler for Notifications {
